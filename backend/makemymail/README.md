@@ -39,7 +39,7 @@
 
 ## Rules of SpringBoot
 
-- By default, Maven and Gradle compile sources from `src/main/java`.
+- By default, Maven and Gradle compile sources from `src/main/java`. The `mvnw` file is called a Maven wrapper file which allows us to run maven-built applications without installing maven all over our system. After doing `./mvnw clean install`, this wrapper installes a folder called `target/` which is equivalent to `node_modules` and is ignored by git by default.
 - The main class should have the annotation `@SpringBootApplication` and contain the main method(`public static void main(String args[])`). It should also import the package of the main file,eg (`package com.example.[project name]`) , `SpringApplication` and `SpringBootApplication`. Given is the template :
 ```MakeMyMail.java
 package com.example.makemymail;

@@ -13,16 +13,10 @@ public class MakeMyMailApplication {
 	{
 		SpringApplication.run(MakeMyMailApplication.class, args);
 	}
-	@GetMapping("/")
-	public String home()
-	{
-		return String.format("Welcome to MakeMyMail");
-
-	}
-	@GetMapping("/hello")
+	@GetMapping("/api/hello")
 	public String hello()
 	{
-		return String.format("Hello World!");
+		return "Hello broooo, First API request from frontend to backend";
 	}
 
 }
