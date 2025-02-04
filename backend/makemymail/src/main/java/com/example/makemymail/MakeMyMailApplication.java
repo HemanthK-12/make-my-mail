@@ -13,7 +13,12 @@ public class MakeMyMailApplication {
 	{
 		SpringApplication.run(MakeMyMailApplication.class, args);
 	}
+	@GetMapping("/")
+	public String home()
+	{
+		return String.format("Welcome to MakeMyMail");
 
+	}
 	@GetMapping("/hello")
 	public String hello()
 	{
