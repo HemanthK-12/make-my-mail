@@ -2,28 +2,23 @@
 ```
 .
 |-- README.md (For documentation)
-`-- demo ( Project name)
+`-- makemymail ( Project name)
     |-- HELP.md (Info abt directory structure, removable)
     |-- mvnw (UNIX)(Runs maven commands without having maven installed)
     |-- mvnw.cmd (WIN)(Runs maven commands without having maven installed)
     |-- pom.xml (Project Object Model.xml, has config details dependencies, etc., Like package.json)
     `-- src
         |-- main (has main class of the project from which it starts executing)
-        |   |-- java
-        |   |   `-- com
-        |   |       `-- example
-        |   |           `-- demo
-        |   |               `-- DemoApplication.java
-        |   `-- resources ( static files to be used in html,css,etc)
-        |       |-- application.properties (config files for springboot app)
-        |       |-- static (has all static resources like images,html,css,js)(sercved directly by web browser)
-        |       `-- templates(directory for thymeleaf, geenrates dynamic content)
-        `-- test(for testing frameworks, generally not needed)
-            `-- java
-                `-- com
-                    `-- example
-                        `-- demo
-                            `-- DemoApplicationTests.java
+            |-- java
+            |   `-- com
+            |       `-- example
+            |           `-- makemymail
+            |               `-- MakeMyMailApplication.java
+            `-- resources ( static files to be used in html,css,etc)
+                |-- application.properties (config files for springboot app)
+                |-- static (has all static resources like images,html,css,js)(served directly by web browser)
+                `-- templates(directory for thymeleaf, geenrates dynamic content)
+
 ```                            
 ## Running the Project
 
@@ -31,7 +26,7 @@
 ```
 ./mvnw clean install
 ```
-- To run the main class file ( here, DemoApplication.java, generally inside the main directory of src folder), we run :
+- To run the main class file ( here, MakeMyMailApplication.java, generally inside the main directory of src folder), we run :
 ```
 ./mvnw spring-boot:run
 ```
@@ -39,23 +34,23 @@
 
 ## Execution Flow
 
-- Main method in the main class file(DemoApplication.java here) executes.
-- This calls `SpringApplication.run(DemoApplication.class,args)`, which starts the spring boot applications and shows the logo and everything when we run `./mvnw spring-boot:run`.
+- Main method in the main class file(MakeMyMailApplication.java here) executes.
+- This calls `SpringApplication.run(MakeMyMailApplication.class,args)`, which starts the spring boot applications and shows the logo and everything when we run `./mvnw spring-boot:run`.
 
 ## Rules of SpringBoot
 
 - The main class should have the annotation `@SpringBootApplication` and contain the main method(`public static void main(String args[])`). It should also import the package of the main file,eg (`package com.example.[project name]`) , `SpringApplication` and `SpringBootApplication`. Given is the template :
-```demo.java
-package com.example.demo;
+```MakeMyMail.java
+package com.example.makemymail;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class DemoApplication {
+public class MakeMyMailApplication {
 
 	public static void main(String[] args) {
-		SpringApplication.run(DemoApplication.class, args);
+		SpringApplication.run(MakeMyMailApplication.class, args);
 	}
 
 }
