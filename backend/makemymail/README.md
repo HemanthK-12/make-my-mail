@@ -11,7 +11,7 @@
         |-- main (has main class of the project from which it starts executing)
             |-- java
             |   `-- com
-            |       `-- example
+            |       `-- makemymailapp
             |           `-- makemymail
             |               `-- MakeMyMailApplication.java
             `-- resources ( static files to be used in html,css,etc)
@@ -31,6 +31,20 @@
 ./mvnw spring-boot:run
 ```
 - Then, springboot starts up, loads the `application.properties` file and you can see the application in your localhost.
+## GMAIL Integration 
+Extract the access token from your OAuth2AuthenticationToken
+Create Gmail API service client
+Call Gmail API to list messages
+Fetch full message details for each email
+Parse email headers (subject, from, date, etc.)
+Return structured data
+## Group Gmail mails by sender
+Fetch all emails (as above)
+Extract sender email from each message's "From" header
+Use Java Streams to group emails by sender email address
+Create summary objects showing sender + their emails
+Sort by most recent email or email count
+
 
 ## Execution Flow
 
@@ -40,9 +54,11 @@
 ## Rules of SpringBoot
 
 - By default, Maven and Gradle compile sources from `src/main/java`. The `mvnw` file is called a Maven wrapper file which allows us to run maven-built applications without installing maven all over our system. After doing `./mvnw clean install`, this wrapper installes a folder called `target/` which is equivalent to `node_modules` and is ignored by git by default.
-- The main class should have the annotation `@SpringBootApplication` and contain the main method(`public static void main(String args[])`). It should also import the package of the main file,eg (`package com.example.[project name]`) , `SpringApplication` and `SpringBootApplication`. Given is the template :
+- ![alt text](https://miro.medium.com/v2/resize:fit:720/format:webp/1*IwovWCKMRDHcVba_amjy7w.png)]
+- For Google Authentication, we use the [`Spring Security OAuth`](https://docs.spring.io/spring-security/reference/servlet/oauth2/index.html) API. This uses the route ":root/login/oauth2/code/google" as the default route/convention for callback of oath2 request for all google authorization.
+- The main class should have the annotation `@SpringBootApplication` and contain the main method(`public static void main(String args[])`). It should also import the package of the main file,eg (`package com.makemymailapp.[project name]`) , `SpringApplication` and `SpringBootApplication`. Given is the template :
 ```MakeMyMail.java
-package com.example.makemymail;
+package com.makemymailapp.makemymail;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

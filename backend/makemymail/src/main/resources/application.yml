@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: makemymail
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: 54155918584-ki99vbika1aih3o1kqnr6ni75ebhudr4.apps.googleusercontent.com 
+            client-secret: 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
+            scope:
+              - openid
+              - profile
+              - email
+              - https://www.googleapis.com/auth/gmail.readonly
+              - https://www.googleapis.com/auth/gmail.modify
+              - https://mail.google.com
+            #redirect-uri: http://localhost:8080/login/oauth2/code/google
+        provider:
+          google:
+            authorization-uri: https://accounts.google.com/o/oauth2/auth
+            token-uri: https://oauth2.googleapis.com/token
+            user-info-uri: https://www.googleapis.com/oauth2/v3/userinfo
