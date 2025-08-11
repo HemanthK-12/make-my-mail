@@ -1,3 +1,4 @@
+[Good way to test the gmail api with profile id and messages information with message id](https://developers.google.com/workspace/gmail/api/reference/rest?apix=true&apix_params=%7B%22userId%22%3A%22101460351359571723514%22%2C%22id%22%3A%2219895bfe3d6a1d3e%22%7D)
 ## Spring Boot Project Structure Explained
 ```
 .
@@ -31,6 +32,21 @@
 ./mvnw spring-boot:run
 ```
 - Then, springboot starts up, loads the `application.properties` file and you can see the application in your localhost.
+```
+Take your existing OAuth2 token (which you already have working)
+Extract the access token from it (the actual string Google needs)
+Use Google's Gmail Java library to create a Gmail service
+Make a simple API call to get a list of message IDs
+Fetch basic details for just a few emails
+Return simple JSON to test everything works
+
+
+Your App → Gmail API: "Give me list of message IDs"
+Gmail API → Your App: ["msg_id_1", "msg_id_2", "msg_id_3"]
+
+Your App → Gmail API: "Give me details for msg_id_1"
+Gmail API → Your App: {subject: "Hello", from: "john@example.com", ...}
+```
 ## GMAIL Integration 
 Extract the access token from your OAuth2AuthenticationToken
 Create Gmail API service client
