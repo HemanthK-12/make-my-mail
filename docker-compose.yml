@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  frontend:
+    image: sw1tchblade/makemymail-frontend:v1
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+    depends_on:
+      - backend
+
+  backend:
+    image: sw1tchblade/makemymail-backend:v1
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
