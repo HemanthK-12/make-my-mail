@@ -1,33 +1,67 @@
 'use client'
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
-export default function EmailDashboard() {
+export default function Dashboard() {
     const [activeTab, setActiveTab] = useState('inbox');
-    const [selectedSender, setSelectedSender] = useState('sender');
-    const [selectedEmails, setSelectedEmails] = useState(new Set());
+    const [selectedSender, setSelectedSender] = useState('date');
+    const [sortOrder, setSortOrder] = useState('desc');
+    const [selectedEmails, setSelectedEmails] = useState(new Set<string>());
     const [sortBy, setSortBy] = useState('sender');
     const [showFilters, setShowFilters] = useState(false);
     const [activeFilter, setActiveFilter] = useState('all');
-    const [selectedSenderInList, setSelectedSenderInList] = useState('Amazon');
+    const [selectedSenderInList, setSelectedSenderInList] = useState('');
     const [isDarkMode, setIsDarkMode] = useState(false);
 
+    // Resizable panel widths
+    const [leftPanelWidth, setLeftPanelWidth] = useState(256);
+    const [middlePanelWidth, setMiddlePanelWidth] = useState(320);
+    const [isResizing, setIsResizing] = useState({ left: false, middle: false });
+    
     // Gmail API integration
-    const [gmailData, setGmailData] = useState(null);
+    const [gmailData, setGmailData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
+    const [error, setError] = useState<string | null>(null);
+
+    // Mouse move handler for resizing
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (isResizing.left) {
+                const newWidth = Math.max(200, Math.min(400, e.clientX));
+                setLeftPanelWidth(newWidth);
+            } else if (isResizing.middle) {
+                const newWidth = Math.max(280, Math.min(500, e.clientX - leftPanelWidth));
+                setMiddlePanelWidth(newWidth);
+            }
+        };
+
+        const handleMouseUp = () => {
+            setIsResizing({ left: false, middle: false });
+        };
+
+        if (isResizing.left || isResizing.middle) {
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+            document.body.style.cursor = 'col-resize';
+        }
+
+        return () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+            document.body.style.cursor = 'default';
+        };
+    }, [isResizing, leftPanelWidth]);
 
     // Fetch Gmail data
     useEffect(() => {
         const fetchGmailData = async () => {
             try {
                 setLoading(true);
-                const response = await fetch('http://localhost:8080/api/gmail/test-connection?maxResults=200', {
+                const response = await fetch('http://localhost:8080/api/gmail/fetch-mails?batchSize=100', {
                     credentials: 'include'
                 });
                 const data = await response.json();
                 setGmailData(data);
                 
-                // Set first sender as selected
                 if (data.emails && data.emails.length > 0) {
                     setSelectedSenderInList(data.emails[0].sender_name);
                 }
@@ -39,20 +73,18 @@ export default function EmailDashboard() {
                 setLoading(false);
             }
         };
-        
         fetchGmailData();
     }, []);
 
-    // Dynamic data based on Gmail API
     const tabs = [
-        { id: 'inbox', name: 'Inbox', count: gmailData?.total_messages_found ||0},
-        { id: 'unread', name: 'Unread', count: gmailData?.emails.filter(e => e.is_unread).length || 0},
-        { id: 'sent', name: 'Sent', count: 421 },
-        { id: 'drafts', name: 'Drafts', count: 23}
+        { id: 'inbox', name: 'Inbox', count: gmailData?.total_emails_fetched || 0},
+        { id: 'unread', name: 'Updates', count: gmailData?.emails?.filter((e: any) => e.is_unread).length || 0},
+        { id: 'sent', name: 'Promotions', count: 421 },
+        { id: 'drafts', name: 'Social', count: 23}
     ];
 
     const senders = gmailData ? Object.values(
-        gmailData.emails.reduce((acc, email) => {
+        gmailData.emails.reduce((acc: any, email: any) => {
             const key = email.sender_email;
             if (!acc[key]) {
                 acc[key] = {
@@ -73,16 +105,12 @@ export default function EmailDashboard() {
             }
             return acc;
         }, {})
-    ).sort((a, b) => b.lastEmail - a.lastEmail) : [];
-
-    const emails = gmailData ? gmailData.emails.filter(email => 
-        email.sender_name === selectedSenderInList || email.sender_email === selectedSenderInList
-    ) : [];
+    ).sort((a: any, b: any) => b.count - a.count) : [];
 
     const filterOptions = [
-        { id: 'all', name: 'All Emails', count: gmailData?.emails.length || 0 },
-        { id: 'unread', name: 'Unread', count: gmailData?.emails.filter(e => e.is_unread).length || 0 },
-        { id: 'today', name: 'Today', count: gmailData?.emails.filter(e => {
+        { id: 'all', name: 'All Emails', count: gmailData?.emails?.length || 0 },
+        { id: 'unread', name: 'Unread', count: gmailData?.emails?.filter((e: any) => e.is_unread).length || 0 },
+        { id: 'today', name: 'Today', count: gmailData?.emails?.filter((e: any) => {
             const today = new Date().setHours(0,0,0,0);
             return new Date(e.timestamp).getTime() >= today;
         }).length || 0 }
@@ -96,13 +124,76 @@ export default function EmailDashboard() {
     ];
 
     const emailSortOptions = [
-        { value: 'date', label: 'Date (Newest)' },
-        { value: 'date-old', label: 'Date (Oldest)' },
-        { value: 'subject', label: 'Subject (A-Z)' },
+        { value: 'date', label: 'Date' },
+        { value: 'sender-name', label: 'Sender Name' },
+        { value: 'subject', label: 'Subject' },
         { value: 'read', label: 'Read Status' }
     ];
 
-    const toggleEmailSelection = (emailId: number) => {
+    const getSortOrderOptions = (sortType: string) => {
+        switch(sortType) {
+            case 'date':
+                return [
+                    { value: 'desc', label: 'Newest First' },
+                    { value: 'asc', label: 'Oldest First' }
+                ];
+            case 'sender-name':
+                return [
+                    { value: 'asc', label: 'A to Z' },
+                    { value: 'desc', label: 'Z to A' }
+                ];
+            case 'subject':
+                return [
+                    { value: 'asc', label: 'A to Z' },
+                    { value: 'desc', label: 'Z to A' }
+                ];
+            case 'read':
+                return [
+                    { value: 'unread', label: 'Unread First' },
+                    { value: 'read', label: 'Read First' }
+                ];
+            default:
+                return [
+                    { value: 'desc', label: 'Descending' },
+                    { value: 'asc', label: 'Ascending' }
+                ];
+        }
+    };
+
+    const sortedEmails = gmailData ? gmailData.emails
+        .filter((email: any) => email.sender_name === selectedSenderInList || email.sender_email === selectedSenderInList)
+        .sort((a: any, b: any) => {
+            switch(selectedSender) {
+                case 'date':
+                    return sortOrder === 'desc' ? b.timestamp - a.timestamp : a.timestamp - b.timestamp;
+                case 'sender-name':
+                    const nameA = a.sender_name.toLowerCase();
+                    const nameB = b.sender_name.toLowerCase();
+                    if (sortOrder === 'asc') {
+                        return nameA < nameB ? -1 : nameA > nameB ? 1 : 0;
+                    } else {
+                        return nameA > nameB ? -1 : nameA < nameB ? 1 : 0;
+                    }
+                case 'subject':
+                    const subjectA = (a.subject || '').toLowerCase();
+                    const subjectB = (b.subject || '').toLowerCase();
+                    if (sortOrder === 'asc') {
+                        return subjectA < subjectB ? -1 : subjectA > subjectB ? 1 : 0;
+                    } else {
+                        return subjectA > subjectB ? -1 : subjectA < subjectB ? 1 : 0;
+                    }
+                case 'read':
+                    if (sortOrder === 'unread') {
+                        return b.is_unread - a.is_unread;
+                    } else {
+                        return a.is_unread - b.is_unread;
+                    }
+                default:
+                    return 0;
+            }
+        }) : [];
+
+    const toggleEmailSelection = (emailId: string) => {
         const newSelected = new Set(selectedEmails);
         if (newSelected.has(emailId)) {
             newSelected.delete(emailId);
@@ -112,7 +203,7 @@ export default function EmailDashboard() {
         setSelectedEmails(newSelected);
     };
 
-    const formatDate = (timestamp:number) => {
+    const formatDate = (timestamp: number) => {
         const date = new Date(timestamp);
         const now = new Date();
         const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
@@ -126,14 +217,13 @@ export default function EmailDashboard() {
         }
     };
 
-    const getCategoryIcon = (labels:string) => {
-        if (labels?.includes('IMPORTANT')) return '⭐';
-        if (labels?.includes('CATEGORY_PROMOTIONS')) return '🏷️';
-        if (labels?.includes('CATEGORY_SOCIAL')) return '👥';
-        return '📧';
+    const truncateText = (text: string, maxWidth: number, baseLength: number = 20) => {
+        if (!text) return '';
+        const ratio = maxWidth / 320;
+        const adjustedLength = Math.max(10, Math.floor(baseLength * ratio));
+        return text.length > adjustedLength ? text.substring(0, adjustedLength) + '...' : text;
     };
 
-    // Define theme classes
     const themeClasses = {
         bg: isDarkMode ? 'bg-gray-900' : 'bg-slate-50',
         headerBg: isDarkMode ? 'bg-gray-800' : 'bg-white',
@@ -146,7 +236,6 @@ export default function EmailDashboard() {
         input: isDarkMode ? 'bg-gray-700 border-gray-600 text-gray-200' : 'bg-white border-slate-300 text-slate-700'
     };
 
-    // Loading state
     if (loading) {
         return (
             <div className={`min-h-screen ${themeClasses.bg} flex items-center justify-center`}>
@@ -158,7 +247,6 @@ export default function EmailDashboard() {
         );
     }
 
-    // Error state
     if (error) {
         return (
             <div className={`min-h-screen ${themeClasses.bg} flex items-center justify-center`}>
@@ -188,11 +276,10 @@ export default function EmailDashboard() {
                     >
                         forward_to_inbox
                     </span>
-                    <h1 className="text-4xl font-bold text-slate-800">MakeMyMail</h1>
+                    <h1 className={`text-4xl font-bold ${themeClasses.text}`}>MakeMyMail</h1>
                 </div>
                 
                 <div className="flex items-center space-x-4">
-                    {/* Dark Mode Toggle */}
                     <button
                         onClick={() => setIsDarkMode(!isDarkMode)}
                         className={`p-2 rounded-lg transition-colors ${
@@ -202,15 +289,7 @@ export default function EmailDashboard() {
                         }`}
                         title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
                     >
-                        {isDarkMode ? (
-                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
-                            </svg>
-                        ) : (
-                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-                            </svg>
-                        )}
+                        {isDarkMode ? '☀️' : '🌙'}
                     </button>
 
                     <div className="flex items-center space-x-2">
@@ -270,12 +349,17 @@ export default function EmailDashboard() {
                 </div>
             )}
 
-            <div className="flex h-screen">
+            {/* Main Content */}
+            <div className="flex relative" style={{ height: 'calc(100vh - 140px)' }}>
                 {/* Left Sidebar */}
-                <div className={`w-64 border-r flex flex-col ${themeClasses.sidebarBg} ${themeClasses.border}`}>
-                    {/* Tab Navigation */}
+                <div 
+                    className={`border-r flex flex-col ${themeClasses.sidebarBg} ${themeClasses.border} h-full relative`}
+                    style={{ width: `${leftPanelWidth}px` }}
+                >
                     <div className={`p-4 border-b ${themeClasses.border}`}>
-                        <div className={`text-sm font-medium mb-3 ${themeClasses.text}`}>Email Categories</div>
+                        <div className={`text-sm font-medium mb-3 ${themeClasses.text}`}>
+                            {leftPanelWidth < 240 ? 'Categories' : 'Email Categories'}
+                        </div>
                         <div className="space-y-1">
                             {tabs.slice(0, 4).map((tab) => (
                                 <button
@@ -287,9 +371,7 @@ export default function EmailDashboard() {
                                             : `${themeClasses.text} hover:bg-opacity-10 hover:bg-gray-500`
                                     }`}
                                 >
-                                    <span className="flex items-center space-x-2">
-                                        <span>{tab.name}</span>
-                                    </span>
+                                    <span className={leftPanelWidth < 220 ? 'text-xs' : ''}>{tab.name}</span>
                                     <span className={`text-xs px-2 py-1 rounded-full ${
                                         isDarkMode ? 'bg-gray-600 text-gray-300' : 'bg-slate-200 text-slate-600'
                                     }`}>
@@ -300,75 +382,95 @@ export default function EmailDashboard() {
                         </div>
                     </div>
 
-                    {/* Navigation Menu */}
                     <div className="p-4 space-y-2">
                         <div className={`text-sm font-medium mb-3 ${themeClasses.text}`}>Tools</div>
                         
-                        <button className="w-full text-left px-3 py-2 rounded bg-blue-100 text-blue-700 font-medium">
-                            Mail Sorter
-                        </button>
-                        
-                        <button className={`w-full text-left px-3 py-2 rounded transition-colors ${themeClasses.text} hover:bg-opacity-10 hover:bg-gray-500`}>
-                            Analytics
-                        </button>
-                        
-                        <button className={`w-full text-left px-3 py-2 rounded transition-colors ${themeClasses.text} hover:bg-opacity-10 hover:bg-gray-500`}>
-                            AI Unsubscribe
-                        </button>
-                        
-                        <button className={`w-full text-left px-3 py-2 rounded transition-colors ${themeClasses.text} hover:bg-opacity-10 hover:bg-gray-500`}>
-                            Email Scheduler
-                        </button>
-
-                        <button className={`w-full text-left px-3 py-2 rounded transition-colors ${themeClasses.text} hover:bg-opacity-10 hover:bg-gray-500`}>
-                            Smart Labels
-                        </button>
-
-                        <button className={`w-full text-left px-3 py-2 rounded transition-colors ${themeClasses.text} hover:bg-opacity-10 hover:bg-gray-500`}>
-                            Templates
-                        </button>
+                        {['Mail Sorter', 'Analytics', 'AI Unsubscribe', 'Email Scheduler', 'Smart Labels', 'Templates'].map((tool, index) => (
+                            <button 
+                                key={tool}
+                                className={`w-full text-left px-3 py-2 rounded transition-colors ${
+                                    index === 0 
+                                        ? 'bg-blue-100 text-blue-700 font-medium' 
+                                        : `${themeClasses.text} hover:bg-opacity-10 hover:bg-gray-500`
+                                } ${leftPanelWidth < 220 ? 'text-xs' : ''}`}
+                            >
+                                {leftPanelWidth < 240 ? tool.split(' ')[0] : tool}
+                            </button>
+                        ))}
                     </div>
 
-                    {/* Profile Section */}
                     <div className={`mt-auto p-4 border-t ${themeClasses.border}`}>
                         <div className="flex items-center space-x-3">
                             <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
                                 isDarkMode ? 'bg-gray-600' : 'bg-slate-300'
                             }`}>
-                                <svg className={`w-4 h-4 ${themeClasses.textSecondary}`} fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                                </svg>
+                                👤
                             </div>
-                            <div>
-                                <div className={`text-sm font-medium ${themeClasses.text}`}>
-                                    {gmailData?.user_email?.split('@')[0] || 'User'}
+                            {leftPanelWidth > 220 && (
+                                <div>
+                                    <div className={`text-sm font-medium ${themeClasses.text}`}>
+                                        {gmailData?.user_email?.split('@')[0] || 'User'}
+                                    </div>
+                                    <button className={`text-xs transition-colors ${themeClasses.textSecondary} hover:${themeClasses.text}`}>
+                                        sign out
+                                    </button>
                                 </div>
-                                <button className={`text-xs transition-colors ${themeClasses.textSecondary} hover:${themeClasses.text}`}>
-                                    sign out
-                                </button>
-                            </div>
+                            )}
                         </div>
                     </div>
+
+                    <div
+                        className="absolute right-0 top-0 w-1 h-full cursor-col-resize bg-transparent hover:bg-blue-400 transition-colors"
+                        onMouseDown={() => setIsResizing({ left: true, middle: false })}
+                    />
                 </div>
 
                 {/* Middle Section - Senders */}
-                <div className={`w-80 border-r ${themeClasses.cardBg} ${themeClasses.border}`}>
-                    <div className="p-4">
+                <div 
+                    className={`border-r ${themeClasses.cardBg} ${themeClasses.border} h-full flex flex-col relative`}
+                    style={{ width: `${middlePanelWidth}px` }}
+                >
+                    <div className="p-4 border-b border-inherit">
                         <div className="flex items-center justify-between mb-4">
-                            <h2 className={`font-semibold ${themeClasses.text}`}>Top Senders</h2>
-                            <select 
-                                value={selectedSender} 
-                                onChange={(e) => setSelectedSender(e.target.value)}
-                                className={`px-2 py-1 border rounded text-sm ${themeClasses.input}`}
-                            >
-                                {emailSortOptions.map(option => (
-                                    <option key={option.value} value={option.value}>{option.label}</option>
-                                ))}
-                            </select>
+                            <h2 className={`font-semibold ${themeClasses.text} ${middlePanelWidth < 300 ? 'text-sm' : ''}`}>
+                                {middlePanelWidth < 300 ? 'Senders' : 'Top Senders'}
+                            </h2>
+                            <div className="flex items-center space-x-2">
+                                <select 
+                                    value={selectedSender} 
+                                    onChange={(e) => {
+                                        setSelectedSender(e.target.value);
+                                        const newOptions = getSortOrderOptions(e.target.value);
+                                        setSortOrder(newOptions[0].value);
+                                    }}
+                                    className={`px-2 py-1 border rounded text-sm ${themeClasses.input} ${
+                                        middlePanelWidth < 320 ? 'text-xs px-1' : ''
+                                    }`}
+                                >
+                                    {emailSortOptions.map(option => (
+                                        <option key={option.value} value={option.value}>
+                                            {middlePanelWidth < 320 ? option.label.split(' ')[0] : option.label}
+                                        </option>
+                                    ))}
+                                </select>
+                                <select 
+                                    value={sortOrder} 
+                                    onChange={(e) => setSortOrder(e.target.value)}
+                                    className={`px-2 py-1 border rounded text-sm ${themeClasses.input} ${
+                                        middlePanelWidth < 320 ? 'text-xs px-1' : ''
+                                    }`}
+                                >
+                                    {getSortOrderOptions(selectedSender).map(option => (
+                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                    ))}
+                                </select>
+                            </div>
                         </div>
-                        
+                    </div>
+                    
+                    <div className="flex-1 overflow-y-auto px-4 pb-4">
                         <div className="space-y-2">
-                            {senders.map((sender) => (
+                            {senders.map((sender: any) => (
                                 <div 
                                     key={sender.email}
                                     onClick={() => setSelectedSenderInList(sender.name)}
@@ -379,7 +481,9 @@ export default function EmailDashboard() {
                                     }`}
                                 >
                                     <div className="flex items-center justify-between mb-2">
-                                        <span className={`font-medium ${themeClasses.text}`}>{sender.name}</span>
+                                        <span className={`font-medium ${themeClasses.text} ${middlePanelWidth < 300 ? 'text-sm' : ''}`}>
+                                            {truncateText(sender.name, middlePanelWidth, 15)}
+                                        </span>
                                         <div className="flex items-center space-x-2">
                                             <span className={`text-xs px-2 py-1 rounded-full ${
                                                 isDarkMode ? 'bg-gray-600 text-gray-300' : 'bg-slate-200 text-slate-600'
@@ -392,28 +496,33 @@ export default function EmailDashboard() {
                                         </div>
                                     </div>
                                     <div className={`text-xs space-y-1 ${themeClasses.textSecondary}`}>
-                                        <div>{sender.domain}</div>
+                                        <div>{truncateText(sender.email, middlePanelWidth, 25)}</div>
                                         <div>Last: {formatDate(sender.lastEmail)}</div>
                                     </div>
                                 </div>
                             ))}
                         </div>
                     </div>
+
+                    <div
+                        className="absolute right-0 top-0 w-1 h-full cursor-col-resize bg-transparent hover:bg-blue-400 transition-colors"
+                        onMouseDown={() => setIsResizing({ left: false, middle: true })}
+                    />
                 </div>
 
                 {/* Right Section - Email List */}
-                <div className={`flex-1 ${themeClasses.cardBg}`}>
-                    <div className="p-4">
+                <div className={`flex-1 ${themeClasses.cardBg} h-full flex flex-col`}>
+                    <div className="p-4 border-b border-inherit">
                         <div className="flex items-center justify-between mb-4">
                             <h2 className={`font-semibold ${themeClasses.text}`}>
-                                {selectedSenderInList} Emails ({emails.length})
+                                {selectedSenderInList} Emails ({sortedEmails.length})
                             </h2>
                             <div className="flex items-center space-x-2">
                                 <button 
                                     onClick={() => window.location.reload()}
                                     className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded hover:bg-green-200"
                                 >
-                                    🔄 Refresh
+                                    Refresh
                                 </button>
                                 <button className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200">
                                     Select All
@@ -423,9 +532,11 @@ export default function EmailDashboard() {
                                 </button>
                             </div>
                         </div>
-                        
+                    </div>
+                    
+                    <div className="flex-1 overflow-y-auto px-4 pb-4">
                         <div className="space-y-2">
-                            {emails.map((email) => (
+                            {sortedEmails.map((email: any) => (
                                 <div 
                                     key={email.id}
                                     className={`flex items-center space-x-3 p-3 border rounded transition-colors ${
@@ -447,12 +558,12 @@ export default function EmailDashboard() {
                                                     ? `${themeClasses.text} font-bold`
                                                     : themeClasses.textSecondary
                                             }`}>
-                                                {email.subject}
+                                                {email.subject || 'No Subject'}
                                             </div>
                                             {email.is_unread && <span className="w-2 h-2 bg-blue-600 rounded-full"></span>}
                                         </div>
                                         <div className={`text-sm mb-1 ${themeClasses.textSecondary}`}>
-                                            {email.snippet}
+                                            {email.snippet || 'No preview available'}
                                         </div>
                                         <div className={`flex items-center justify-between text-xs ${themeClasses.textSecondary}`}>
                                             <div className="flex items-center space-x-3">
@@ -470,7 +581,7 @@ export default function EmailDashboard() {
                             ))}
                         </div>
                         
-                        {emails.length === 0 && selectedSenderInList && (
+                        {sortedEmails.length === 0 && selectedSenderInList && (
                             <div className="text-center py-8">
                                 <div className="text-4xl mb-2">📭</div>
                                 <p className={themeClasses.textSecondary}>No emails found for {selectedSenderInList}</p>
@@ -487,10 +598,9 @@ export default function EmailDashboard() {
                         Connected as: <span className="font-medium">{gmailData?.user_email}</span>
                     </div>
                     <div className="flex items-center space-x-4">
-                        <span>Total: {gmailData?.total_messages_found || 0} emails</span>
-                        <span>Unread: {gmailData?.emails.filter(e => e.is_unread).length || 0}</span>
+                        <span>Total: {gmailData?.total_emails_fetched || 0} emails</span>
+                        <span>Unread: {gmailData?.emails?.filter((e: any) => e.is_unread).length || 0}</span>
                         <span>Senders: {senders.length}</span>
-                        <span>Showing: {gmailData?.emails_returned || 0} recent</span>
                     </div>
                 </div>
             </div>
