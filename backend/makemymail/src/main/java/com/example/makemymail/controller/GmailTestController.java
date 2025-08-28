@@ -13,8 +13,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestBody;
+
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import java.util.*;
@@ -195,6 +198,78 @@ public class GmailTestController {
         }
     }
     
+    @PostMapping("/move-to-trash")
+    @CrossOrigin(origins = "http://localhost:3000", allowCredentials = "true")
+    public ResponseEntity<Map<String, Object>> moveEmailsToTrash(
+        OAuth2AuthenticationToken token,
+        @RequestBody List<String> emailIds) {
+    
+        Map<String, Object> response = new HashMap<>();
+        
+        try {
+            long startTime = System.currentTimeMillis();
+            Gmail gmail = gmailService.createGmailService(token);
+            String userEmail = (String) token.getPrincipal().getAttribute("email");
+            
+            List<String> successfulMoves = new ArrayList<>();
+            List<String> failedMoves = new ArrayList<>();
+            Map<String, String> errorMessages = new HashMap<>();
+            
+            // Use batch request for efficiency
+            BatchRequest batch = gmail.batch();
+            
+            for (String emailId : emailIds) {
+                gmail.users().messages()
+                    .trash("me", emailId)
+                    .queue(batch, new JsonBatchCallback<Message>() {
+                        @Override
+                        public void onSuccess(Message result, HttpHeaders responseHeaders) {
+                            successfulMoves.add(emailId);
+                            System.out.println("Successfully moved email " + emailId + " to trash");
+                        }
+                        
+                        @Override
+                        public void onFailure(GoogleJsonError error, HttpHeaders responseHeaders) {
+                            failedMoves.add(emailId);
+                            errorMessages.put(emailId, error.getMessage());
+                            System.err.println("Failed to move email " + emailId + " to trash: " + error.getMessage());
+                        }
+                    });
+            }
+            
+            batch.execute();
+            
+            long endTime = System.currentTimeMillis();
+            
+            // Prepare response
+            response.put("status", "success");
+            response.put("user_email", userEmail);
+            response.put("total_requested", emailIds.size());
+            response.put("successful_moves", successfulMoves.size());
+            response.put("failed_moves", failedMoves.size());
+            response.put("moved_email_ids", successfulMoves);
+            response.put("failed_email_ids", failedMoves);
+            response.put("error_messages", errorMessages);
+            response.put("processing_time_ms", endTime - startTime);
+            
+            System.out.println("Move to trash operation completed:");
+            System.out.println("- Requested: " + emailIds.size() + " emails");
+            System.out.println("- Successfully moved: " + successfulMoves.size() + " emails");
+            System.out.println("- Failed: " + failedMoves.size() + " emails");
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            System.err.println("Error in moveEmailsToTrash: " + e.getMessage());
+            e.printStackTrace();
+            
+            response.put("status", "error");
+            response.put("message", "Failed to move emails to trash: " + e.getMessage());
+            response.put("error_details", e.getClass().getSimpleName());
+            
+            return ResponseEntity.status(500).body(response);
+    }
+}
     private List<Map<String, Object>> fetchEmailsBatch(Gmail gmail, List<Message> messages) throws Exception {
         
         Map<String, Map<String, Object>> emailResults = new ConcurrentHashMap<>();
