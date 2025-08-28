@@ -6,6 +6,9 @@ export default function Dashboard() {
     const [selectedSender, setSelectedSender] = useState('date');
     const [sortOrder, setSortOrder] = useState('desc');
     const [selectedEmails, setSelectedEmails] = useState(new Set<string>());
+    const [selectedEmailsData, setSelectedEmailsData] = useState<any[]>([]);
+    const [showSyncPopup, setShowSyncPopup] = useState(false);
+    const [syncInProgress, setSyncInProgress] = useState(false);
     const [sortBy, setSortBy] = useState('sender');
     const [showFilters, setShowFilters] = useState(false);
     const [activeFilter, setActiveFilter] = useState('all');
@@ -195,12 +198,34 @@ export default function Dashboard() {
 
     const toggleEmailSelection = (emailId: string) => {
         const newSelected = new Set(selectedEmails);
+        const newSelectedData = [...selectedEmailsData];
+        
         if (newSelected.has(emailId)) {
+            // Remove from selection
             newSelected.delete(emailId);
+            const index = newSelectedData.findIndex(email => email.id === emailId);
+            if (index > -1) {
+                newSelectedData.splice(index, 1);
+            }
         } else {
+            // Add to selection
             newSelected.add(emailId);
+            const emailData = sortedEmails.find((email: any) => email.id === emailId);
+            if (emailData) {
+                newSelectedData.push({
+                    id: emailData.id,
+                    subject: emailData.subject || 'No Subject',
+                    sender_name: emailData.sender_name,
+                    sender_email: emailData.sender_email,
+                    timestamp: emailData.timestamp,
+                    is_unread: emailData.is_unread,
+                    snippet: emailData.snippet || 'No preview available'
+                });
+            }
         }
+        
         setSelectedEmails(newSelected);
+        setSelectedEmailsData(newSelectedData);
     };
 
     const formatDate = (timestamp: number) => {
@@ -222,6 +247,44 @@ export default function Dashboard() {
         const ratio = maxWidth / 320;
         const adjustedLength = Math.max(10, Math.floor(baseLength * ratio));
         return text.length > adjustedLength ? text.substring(0, adjustedLength) + '...' : text;
+    };
+
+    const handleConfirmSync = async () => {
+        try {
+            setSyncInProgress(true);
+            const emailIds = selectedEmailsData.map(email => email.id);
+            
+            const response = await fetch('http://localhost:8080/api/gmail/move-to-trash', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                credentials: 'include',
+                body: JSON.stringify(emailIds)
+            });
+            
+            const result = await response.json();
+            
+            if (result.status === 'success') {
+                // Clear selections and close popup
+                setSelectedEmails(new Set());
+                setSelectedEmailsData([]);
+                setShowSyncPopup(false);
+                
+                // Show success message or refresh data
+                alert(`Successfully moved ${result.successful_moves} email(s) to trash!`);
+                
+                // Refresh email data
+                window.location.reload();
+            } else {
+                alert(`Error: ${result.message}`);
+            }
+        } catch (error) {
+            console.error('Move to trash failed:', error);
+            alert('Failed to move emails to trash. Please try again.');
+        } finally {
+            setSyncInProgress(false);
+        }
     };
 
     const themeClasses = {
@@ -319,7 +382,14 @@ export default function Dashboard() {
                     <button className="px-4 py-2 bg-red-100 text-red-700 border border-red-200 rounded hover:bg-red-200 transition-colors">
                         Delete [{selectedEmails.size}]
                     </button>                    
-                    <button className={`px-4 py-2 rounded transition-colors ${themeClasses.button}`}>
+                    <button 
+                        className={`px-4 py-2 rounded transition-colors ${themeClasses.button}`}
+                        onClick={() => {
+                            if (selectedEmailsData.length > 0) {
+                                setShowSyncPopup(true);
+                            }
+                        }}
+                    >
                         Sync to Gmail
                     </button>
                 </div>
@@ -481,7 +551,11 @@ export default function Dashboard() {
                                     }`}
                                 >
                                     <div className="flex items-center justify-between mb-2">
-                                        <span className={`font-medium ${themeClasses.text} ${middlePanelWidth < 300 ? 'text-sm' : ''}`}>
+                                        <span className={`font-medium ${
+                                            selectedSenderInList === sender.name 
+                                                ? 'text-blue-700' 
+                                                : themeClasses.text
+                                        } ${middlePanelWidth < 300 ? 'text-sm' : ''}`}>
                                             {truncateText(sender.name, middlePanelWidth, 15)}
                                         </span>
                                         <div className="flex items-center space-x-2">
@@ -522,7 +596,7 @@ export default function Dashboard() {
                                     onClick={() => window.location.reload()}
                                     className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded hover:bg-green-200"
                                 >
-                                    Refresh
+                                    🔄 Refresh
                                 </button>
                                 <button className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200">
                                     Select All
@@ -590,6 +664,78 @@ export default function Dashboard() {
                     </div>
                 </div>
             </div>
+
+            {/* Sync Confirmation Popup */}
+            {showSyncPopup && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className={`${themeClasses.cardBg} rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden`}>
+                        <div className={`p-6 border-b ${themeClasses.border}`}>
+                            <h2 className={`text-xl font-bold ${themeClasses.text}`}>Confirm Sync to Gmail</h2>
+                            <p className={`mt-2 ${themeClasses.textSecondary}`}>
+                                You have selected {selectedEmailsData.length} email(s) for syncing. Please review the changes below:
+                            </p>
+                        </div>
+                        
+                        <div className="p-6 max-h-96 overflow-y-auto">
+                            <div className="space-y-4">
+                                {selectedEmailsData.map((email, index) => (
+                                    <div key={email.id} className={`p-4 rounded border ${themeClasses.border} ${themeClasses.cardBg}`}>
+                                        <div className="flex items-start justify-between mb-2">
+                                            <div className="flex-1">
+                                                <div className="flex items-center space-x-2 mb-1">
+                                                    <span className={`font-medium ${themeClasses.text}`}>
+                                                        #{index + 1}
+                                                    </span>
+                                                    <span className={`font-semibold ${themeClasses.text}`}>
+                                                        {email.subject}
+                                                    </span>
+                                                    {email.is_unread && (
+                                                        <span className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded">
+                                                            Unread
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className={`text-sm ${themeClasses.textSecondary} mb-2`}>
+                                                    <div><strong>From:</strong> {email.sender_name} ({email.sender_email})</div>
+                                                    <div><strong>Date:</strong> {formatDate(email.timestamp)}</div>
+                                                </div>
+                                                <div className={`text-sm ${themeClasses.textSecondary}`}>
+                                                    <strong>Preview:</strong> {email.snippet}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        
+                        <div className={`p-6 border-t ${themeClasses.border} flex items-center justify-between`}>
+                            <div className={`text-sm ${themeClasses.textSecondary}`}>
+                                Total emails selected: <span className="font-semibold">{selectedEmailsData.length}</span>
+                                <div className="mt-1 text-xs">These emails will be moved to your Gmail trash.</div>
+                            </div>
+                            <div className="flex items-center space-x-3">
+                                <button 
+                                    className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-100 transition-colors"
+                                    onClick={() => setShowSyncPopup(false)}
+                                    disabled={syncInProgress}
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    className={`px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors ${
+                                        syncInProgress ? 'opacity-50 cursor-not-allowed' : ''
+                                    }`}
+                                    onClick={handleConfirmSync}
+                                    disabled={syncInProgress}
+                                >
+                                    {syncInProgress ? 'Moving to Trash...' : 'Move to Trash'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Status Bar */}
             <div className={`border-t px-6 py-2 ${themeClasses.headerBg} ${themeClasses.border}`}>
