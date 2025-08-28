@@ -7,6 +7,10 @@ export default function Dashboard() {
     const [sortOrder, setSortOrder] = useState('desc');
     const [selectedEmails, setSelectedEmails] = useState(new Set<string>());
     const [selectedEmailsData, setSelectedEmailsData] = useState<any[]>([]);
+    const [deletedEmails, setDeletedEmails] = useState(new Set<string>());
+    const [deletedEmailsData, setDeletedEmailsData] = useState<any[]>([]);
+    const [lastDeletedEmails, setLastDeletedEmails] = useState(new Set<string>());
+    const [lastDeletedEmailsData, setLastDeletedEmailsData] = useState<any[]>([]);
     const [showSyncPopup, setShowSyncPopup] = useState(false);
     const [syncInProgress, setSyncInProgress] = useState(false);
     const [sortBy, setSortBy] = useState('sender');
@@ -24,6 +28,8 @@ export default function Dashboard() {
     const [gmailData, setGmailData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [emailStats, setEmailStats] = useState<any>(null);
+    const [fetchProgress, setFetchProgress] = useState({ current: 0, total: 0 });
 
     // Mouse move handler for resizing
     useEffect(() => {
@@ -54,19 +60,30 @@ export default function Dashboard() {
         };
     }, [isResizing, leftPanelWidth]);
 
-    // Fetch Gmail data
+    // Fetch Gmail data with progress tracking
     useEffect(() => {
         const fetchGmailData = async () => {
             try {
                 setLoading(true);
-                const response = await fetch('http://localhost:8080/api/gmail/fetch-mails?batchSize=100', {
-                    credentials: 'include'
-                });
-                const data = await response.json();
-                setGmailData(data);
                 
-                if (data.emails && data.emails.length > 0) {
-                    setSelectedSenderInList(data.emails[0].sender_name);
+                // Check URL params to determine if fetchAll should be true
+                const urlParams = new URLSearchParams(window.location.search);
+                const fetchAll = urlParams.get('fetchAll') === 'true';
+                
+                if (fetchAll) {
+                    // Fetch emails with progress updates for fetchAll=true
+                    await fetchEmailsWithProgress();
+                } else {
+                    // Simple fetch for normal case
+                    const response = await fetch('http://localhost:8080/api/gmail/fetch-mails?batchSize=100', {
+                        credentials: 'include'
+                    });
+                    const data = await response.json();
+                    setGmailData(data);
+                    
+                    if (data.emails && data.emails.length > 0) {
+                        setSelectedSenderInList(data.emails[0].sender_name);
+                    }
                 }
                 
                 setError(null);
@@ -78,6 +95,66 @@ export default function Dashboard() {
         };
         fetchGmailData();
     }, []);
+
+    const fetchEmailsWithProgress = async () => {
+        try {
+            let allEmails: any[] = [];
+            let nextPageToken: string | null = null;
+            let estimatedTotal = 0;
+            
+            do {
+                const url = nextPageToken 
+                    ? `http://localhost:8080/api/gmail/fetch-mails-continuation?pageToken=${nextPageToken}&batchSize=100&fetchAll=true`
+                    : `http://localhost:8080/api/gmail/fetch-mails?batchSize=100&fetchAll=true`;
+                
+                const response = await fetch(url, {
+                    credentials: 'include'
+                });
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    allEmails = [...allEmails, ...data.emails];
+                    
+                    // Update estimated total from first response
+                    if (data.estimated_inbox_total && estimatedTotal === 0) {
+                        estimatedTotal = data.estimated_inbox_total;
+                    }
+                    
+                    // Update progress with current fetch count
+                    setFetchProgress({ 
+                        current: allEmails.length, 
+                        total: estimatedTotal || allEmails.length 
+                    });
+                    
+                    // Set first sender as selected
+                    if (allEmails.length > 0 && !selectedSenderInList) {
+                        setSelectedSenderInList(allEmails[0].sender_name);
+                    }
+                    
+                    nextPageToken = data.next_page_token;
+                    
+                    // Create combined response
+                    const combinedData = {
+                        ...data,
+                        emails: allEmails,
+                        total_emails_fetched: allEmails.length,
+                        estimated_inbox_total: estimatedTotal
+                    };
+                    setGmailData(combinedData);
+                    
+                    // Small delay to show progress animation
+                    if (nextPageToken) {
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
+                } else {
+                    throw new Error(data.message);
+                }
+            } while (nextPageToken);
+            
+        } catch (error) {
+            throw error;
+        }
+    };
 
     const tabs = [
         { id: 'inbox', name: 'Inbox', count: gmailData?.total_emails_fetched || 0},
@@ -165,6 +242,7 @@ export default function Dashboard() {
 
     const sortedEmails = gmailData ? gmailData.emails
         .filter((email: any) => email.sender_name === selectedSenderInList || email.sender_email === selectedSenderInList)
+        .filter((email: any) => !deletedEmails.has(email.id)) // Filter out deleted emails
         .sort((a: any, b: any) => {
             switch(selectedSender) {
                 case 'date':
@@ -249,10 +327,99 @@ export default function Dashboard() {
         return text.length > adjustedLength ? text.substring(0, adjustedLength) + '...' : text;
     };
 
+    const handleDeleteEmails = () => {
+        if (selectedEmails.size === 0) return;
+        
+        // Store last deleted state for undo
+        setLastDeletedEmails(new Set(selectedEmails));
+        setLastDeletedEmailsData([...selectedEmailsData]);
+        
+        // Move selected emails to deleted state
+        const newDeletedEmails = new Set([...deletedEmails, ...selectedEmails]);
+        const newDeletedEmailsData = [...deletedEmailsData, ...selectedEmailsData];
+        
+        setDeletedEmails(newDeletedEmails);
+        setDeletedEmailsData(newDeletedEmailsData);
+        
+        // Clear current selections
+        setSelectedEmails(new Set());
+        setSelectedEmailsData([]);
+    };
+
+    const handleUndoLastDelete = () => {
+        if (lastDeletedEmails.size === 0) return;
+        
+        // Remove last deleted emails from deleted state
+        const newDeletedEmails = new Set(deletedEmails);
+        const newDeletedEmailsData = [...deletedEmailsData];
+        
+        lastDeletedEmails.forEach(emailId => {
+            newDeletedEmails.delete(emailId);
+        });
+        
+        // Remove from deleted emails data
+        lastDeletedEmailsData.forEach(email => {
+            const index = newDeletedEmailsData.findIndex(item => item.id === email.id);
+            if (index > -1) {
+                newDeletedEmailsData.splice(index, 1);
+            }
+        });
+        
+        setDeletedEmails(newDeletedEmails);
+        setDeletedEmailsData(newDeletedEmailsData);
+        
+        // Clear last deleted state
+        setLastDeletedEmails(new Set());
+        setLastDeletedEmailsData([]);
+    };
+
+    const handleSelectAll = () => {
+        const allCurrentEmails = sortedEmails;
+        const newSelected = new Set<string>();
+        const newSelectedData: any[] = [];
+        
+        allCurrentEmails.forEach((email: any) => {
+            newSelected.add(email.id);
+            newSelectedData.push({
+                id: email.id,
+                subject: email.subject || 'No Subject',
+                sender_name: email.sender_name,
+                sender_email: email.sender_email,
+                timestamp: email.timestamp,
+                is_unread: email.is_unread,
+                snippet: email.snippet || 'No preview available'
+            });
+        });
+        
+        setSelectedEmails(newSelected);
+        setSelectedEmailsData(newSelectedData);
+    };
+
+    const handleClearSelection = () => {
+        setSelectedEmails(new Set());
+        setSelectedEmailsData([]);
+    };
+
+    const handleUndoFromPopup = (emailId: string) => {
+        // Remove from deleted emails
+        const newDeletedEmails = new Set(deletedEmails);
+        newDeletedEmails.delete(emailId);
+        
+        const newDeletedEmailsData = deletedEmailsData.filter(email => email.id !== emailId);
+        
+        setDeletedEmails(newDeletedEmails);
+        setDeletedEmailsData(newDeletedEmailsData);
+        
+        // Close popup if no more emails to sync
+        if (newDeletedEmailsData.length === 0) {
+            setShowSyncPopup(false);
+        }
+    };
+
     const handleConfirmSync = async () => {
         try {
             setSyncInProgress(true);
-            const emailIds = selectedEmailsData.map(email => email.id);
+            const emailIds = deletedEmailsData.map(email => email.id);
             
             const response = await fetch('http://localhost:8080/api/gmail/move-to-trash', {
                 method: 'POST',
@@ -266,16 +433,12 @@ export default function Dashboard() {
             const result = await response.json();
             
             if (result.status === 'success') {
-                // Clear selections and close popup
-                setSelectedEmails(new Set());
-                setSelectedEmailsData([]);
+                // Clear deleted emails tracking after successful sync
+                setDeletedEmails(new Set());
+                setDeletedEmailsData([]);
                 setShowSyncPopup(false);
                 
-                // Show success message or refresh data
                 alert(`Successfully moved ${result.successful_moves} email(s) to trash!`);
-                
-                // Refresh email data
-                window.location.reload();
             } else {
                 alert(`Error: ${result.message}`);
             }
@@ -300,11 +463,55 @@ export default function Dashboard() {
     };
 
     if (loading) {
+        const progressPercentage = fetchProgress.total > 0 
+            ? Math.min(100, Math.round((fetchProgress.current / fetchProgress.total) * 100))
+            : 0;
+            
+        const showProgressBar = fetchProgress.total > 0 && fetchProgress.current >= 0;
+        
         return (
             <div className={`min-h-screen ${themeClasses.bg} flex items-center justify-center`}>
-                <div className="text-center">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                    <p className={themeClasses.textSecondary}>Loading your emails...</p>
+                <div className="text-center max-w-lg w-full mx-4">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-6"></div>
+                    <p className={`mb-6 text-lg ${themeClasses.text}`}>Loading your emails...</p>
+                    
+                    {showProgressBar ? (
+                        <div className="w-full">
+                            {/* Progress Bar */}
+                            <div className="w-full bg-gray-200 rounded-full h-4 mb-4 overflow-hidden shadow-inner">
+                                <div 
+                                    className="bg-gradient-to-r from-blue-500 to-blue-600 h-4 rounded-full transition-all duration-500 ease-out shadow-sm"
+                                    style={{ width: `${progressPercentage}%` }}
+                                ></div>
+                            </div>
+                            
+                            {/* Progress Info */}
+                            <div className="flex justify-between items-center mb-4">
+                                <span className={`text-sm font-medium ${themeClasses.text}`}>
+                                    {fetchProgress.current.toLocaleString()} of {fetchProgress.total.toLocaleString()} emails
+                                </span>
+                                <span className={`text-lg font-bold ${themeClasses.text}`}>
+                                    {progressPercentage}%
+                                </span>
+                            </div>
+                            
+                            {/* Status Message */}
+                            <p className={`text-sm ${themeClasses.textSecondary} mb-2`}>
+                                Fetching all emails from your inbox...
+                            </p>
+                            
+                            {/* ETA Estimation */}
+                            {fetchProgress.current > 0 && progressPercentage < 100 && (
+                                <p className={`text-xs ${themeClasses.textSecondary}`}>
+                                    Please wait, this may take a few minutes for large inboxes
+                                </p>
+                            )}
+                        </div>
+                    ) : (
+                        <p className={`text-sm ${themeClasses.textSecondary}`}>
+                            Connecting to Gmail...
+                        </p>
+                    )}
                 </div>
             </div>
         );
@@ -379,18 +586,34 @@ export default function Dashboard() {
                         Filters {showFilters ? '▼' : '▶'}
                     </button>
                     
-                    <button className="px-4 py-2 bg-red-100 text-red-700 border border-red-200 rounded hover:bg-red-200 transition-colors">
+                    <button 
+                        className="px-4 py-2 bg-red-100 text-red-700 border border-red-200 rounded hover:bg-red-200 transition-colors"
+                        onClick={handleDeleteEmails}
+                        disabled={selectedEmails.size === 0}
+                    >
                         Delete [{selectedEmails.size}]
+                    </button>
+                    
+                    <button 
+                        className={`px-4 py-2 rounded transition-colors ${
+                            lastDeletedEmails.size > 0 
+                                ? 'bg-yellow-100 text-yellow-700 border border-yellow-200 hover:bg-yellow-200' 
+                                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        }`}
+                        onClick={handleUndoLastDelete}
+                        disabled={lastDeletedEmails.size === 0}
+                    >
+                        ↶ Undo ({lastDeletedEmails.size})
                     </button>                    
                     <button 
                         className={`px-4 py-2 rounded transition-colors ${themeClasses.button}`}
                         onClick={() => {
-                            if (selectedEmailsData.length > 0) {
+                            if (deletedEmailsData.length > 0) {
                                 setShowSyncPopup(true);
                             }
                         }}
                     >
-                        Sync to Gmail
+                        Sync to Gmail {deletedEmailsData.length > 0 && `(${deletedEmailsData.length} pending)`}
                     </button>
                 </div>
             </header>
@@ -598,10 +821,16 @@ export default function Dashboard() {
                                 >
                                     🔄 Refresh
                                 </button>
-                                <button className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200">
+                                <button 
+                                    onClick={handleSelectAll}
+                                    className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                                >
                                     Select All
                                 </button>
-                                <button className={`px-3 py-1 text-sm rounded transition-colors ${themeClasses.button}`}>
+                                <button 
+                                    onClick={handleClearSelection}
+                                    className={`px-3 py-1 text-sm rounded transition-colors ${themeClasses.button}`}
+                                >
                                     Clear
                                 </button>
                             </div>
@@ -672,17 +901,20 @@ export default function Dashboard() {
                         <div className={`p-6 border-b ${themeClasses.border}`}>
                             <h2 className={`text-xl font-bold ${themeClasses.text}`}>Confirm Sync to Gmail</h2>
                             <p className={`mt-2 ${themeClasses.textSecondary}`}>
-                                You have selected {selectedEmailsData.length} email(s) for syncing. Please review the changes below:
+                                You have {deletedEmailsData.length} email(s) marked for deletion. Please review the changes below:
                             </p>
                         </div>
                         
                         <div className="p-6 max-h-96 overflow-y-auto">
                             <div className="space-y-4">
-                                {selectedEmailsData.map((email, index) => (
+                                {deletedEmailsData.map((email, index) => (
                                     <div key={email.id} className={`p-4 rounded border ${themeClasses.border} ${themeClasses.cardBg}`}>
                                         <div className="flex items-start justify-between mb-2">
                                             <div className="flex-1">
                                                 <div className="flex items-center space-x-2 mb-1">
+                                                    <span className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded font-semibold">
+                                                        DELETED
+                                                    </span>
                                                     <span className={`font-medium ${themeClasses.text}`}>
                                                         #{index + 1}
                                                     </span>
@@ -703,6 +935,13 @@ export default function Dashboard() {
                                                     <strong>Preview:</strong> {email.snippet}
                                                 </div>
                                             </div>
+                                            <button
+                                                onClick={() => handleUndoFromPopup(email.id)}
+                                                className="ml-3 px-2 py-1 text-xs bg-yellow-100 text-yellow-700 border border-yellow-300 rounded hover:bg-yellow-200 transition-colors"
+                                                disabled={syncInProgress}
+                                            >
+                                                Undo
+                                            </button>
                                         </div>
                                     </div>
                                 ))}
@@ -711,8 +950,8 @@ export default function Dashboard() {
                         
                         <div className={`p-6 border-t ${themeClasses.border} flex items-center justify-between`}>
                             <div className={`text-sm ${themeClasses.textSecondary}`}>
-                                Total emails selected: <span className="font-semibold">{selectedEmailsData.length}</span>
-                                <div className="mt-1 text-xs">These emails will be moved to your Gmail trash.</div>
+                                Total changes to sync: <span className="font-semibold">{deletedEmailsData.length} deletions</span>
+                                <div className="mt-1 text-xs">These emails will be synced to your Gmail account.</div>
                             </div>
                             <div className="flex items-center space-x-3">
                                 <button 
@@ -723,13 +962,13 @@ export default function Dashboard() {
                                     Cancel
                                 </button>
                                 <button 
-                                    className={`px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors ${
+                                    className={`px-4 py-2 bg-green-600 text-white rounded hover:bg-red-700 transition-colors ${
                                         syncInProgress ? 'opacity-50 cursor-not-allowed' : ''
                                     }`}
                                     onClick={handleConfirmSync}
                                     disabled={syncInProgress}
                                 >
-                                    {syncInProgress ? 'Moving to Trash...' : 'Move to Trash'}
+                                    {syncInProgress ? 'Syncing...' : 'Confirm Sync'}
                                 </button>
                             </div>
                         </div>
