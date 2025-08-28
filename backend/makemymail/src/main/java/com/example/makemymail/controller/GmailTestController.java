@@ -270,6 +270,43 @@ public class GmailTestController {
             return ResponseEntity.status(500).body(response);
     }
 }
+
+    @GetMapping("/email-stats")
+public ResponseEntity<Map<String, Object>> getEmailStats(OAuth2AuthenticationToken token) {
+    Map<String, Object> response = new HashMap<>();
+    
+    try {
+        Gmail gmail = gmailService.createGmailService(token);
+        String userEmail = (String) token.getPrincipal().getAttribute("email");
+        
+        // Get user profile with message counts
+        com.google.api.services.gmail.model.Profile profile = gmail.users().getProfile("me").execute();
+        
+        // Get inbox-specific count (this requires a search query)
+        Gmail.Users.Messages.List inboxRequest = gmail.users().messages()
+            .list("me")
+            .setQ("in:inbox")
+            .setMaxResults(1L); // We only need the count, not the actual messages
+        
+        ListMessagesResponse inboxResponse = inboxRequest.execute();
+        Long estimatedInboxTotal = inboxResponse.getResultSizeEstimate();
+        
+        response.put("status", "success");
+        response.put("user_email", userEmail);
+        response.put("total_messages_in_account", profile.getMessagesTotal());
+        response.put("total_threads_in_account", profile.getThreadsTotal());
+        response.put("estimated_inbox_total", estimatedInboxTotal);
+        response.put("history_id", profile.getHistoryId());
+        
+        return ResponseEntity.ok(response);
+        
+    } catch (Exception e) {
+        response.put("status", "error");
+        response.put("message", "Failed to get email stats: " + e.getMessage());
+        return ResponseEntity.status(500).body(response);
+    }
+}
+
     private List<Map<String, Object>> fetchEmailsBatch(Gmail gmail, List<Message> messages) throws Exception {
         
         Map<String, Map<String, Object>> emailResults = new ConcurrentHashMap<>();
