@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   frontend:
-    image: sw1tchblade/makemymail-frontend:v1
+    image: sw1tchblade/makemymail-frontend:v2.1.0
     ports:
       - "3000:3000"
     environment:
@@ -11,7 +11,7 @@ services:
       - backend
 
   backend:
-    image: sw1tchblade/makemymail-backend:v1
+    image: sw1tchblade/makemymail-backend:v2.1.0
     ports:
       - "8080:8080"
     environment:
